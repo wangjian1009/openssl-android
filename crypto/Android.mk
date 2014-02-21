@@ -2,11 +2,11 @@ LOCAL_PATH:= $(call my-dir)
 
 arm_cflags := -DOPENSSL_BN_ASM_MONT -DAES_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM
 arm_src_files := \
-    aes/asm/aes-armv4.S \
-    bn/asm/armv4-mont.S \
-    sha/asm/sha1-armv4-large.S \
-    sha/asm/sha256-armv4.S \
-    sha/asm/sha512-armv4.S
+    aes/asm/aes-armv4.s \
+    bn/asm/armv4-mont.s \
+    sha/asm/sha1-armv4-large.s \
+    sha/asm/sha256-armv4.s \
+    sha/asm/sha512-armv4.s
 non_arm_src_files := aes/aes_core.c
 
 local_src_files := \
@@ -22,6 +22,11 @@ local_src_files := \
 	o_time.c \
 	o_str.c \
 	o_dir.c \
+	o_fips.c \
+	o_init.c \
+	ppccap.c \
+    armcap.c \
+	fips_ers.c \
 	aes/aes_cbc.c \
 	aes/aes_cfb.c \
 	aes/aes_ctr.c \
@@ -155,7 +160,9 @@ local_src_files := \
 	bn/bn_sqr.c \
 	bn/bn_sqrt.c \
 	bn/bn_word.c \
+    bn/bn_x931p.c \
 	buffer/buf_err.c \
+    buffer/buf_str.c \
 	buffer/buffer.c \
 	comp/c_rle.c \
 	comp/c_zlib.c \
@@ -240,6 +247,13 @@ local_src_files := \
 	ec/ecp_mont.c \
 	ec/ecp_nist.c \
 	ec/ecp_smpl.c \
+	ec/ec2_oct.c \
+	ec/ec_oct.c \
+	ec/ecp_nistp224.c \
+	ec/ecp_nistp256.c \
+	ec/ecp_nistp521.c \
+	ec/ecp_nistputil.c \
+	ec/ecp_oct.c \
 	ecdh/ech_err.c \
 	ecdh/ech_key.c \
 	ecdh/ech_lib.c \
@@ -303,6 +317,10 @@ local_src_files := \
 	evp/pmeth_fn.c \
 	evp/pmeth_gn.c \
 	evp/pmeth_lib.c \
+	evp/e_aes_cbc_hmac_sha1.c \
+	evp/e_rc4_hmac_md5.c \
+	evp/evp_cnf.c \
+	evp/evp_fips.c \
 	hmac/hm_ameth.c \
 	hmac/hm_pmeth.c \
 	hmac/hmac.c \
@@ -317,6 +335,9 @@ local_src_files := \
 	modes/cfb128.c \
 	modes/ctr128.c \
 	modes/ofb128.c \
+	modes/ccm128.c \
+	modes/gcm128.c \
+	modes/xts128.c \
 	objects/o_names.c \
 	objects/obj_dat.c \
 	objects/obj_err.c \
@@ -378,6 +399,7 @@ local_src_files := \
 	rc2/rc2ofb64.c \
 	rc4/rc4_enc.c \
 	rc4/rc4_skey.c \
+    rc4/rc4_utl.c \
 	ripemd/rmd_dgst.c \
 	ripemd/rmd_one.c \
 	rsa/rsa_ameth.c \
@@ -398,6 +420,7 @@ local_src_files := \
 	rsa/rsa_sign.c \
 	rsa/rsa_ssl.c \
 	rsa/rsa_x931.c \
+    rsa/rsa_crpt.c \
 	sha/sha1_one.c \
 	sha/sha1dgst.c \
 	sha/sha256.c \
@@ -468,55 +491,16 @@ local_src_files := \
 	x509v3/v3_skey.c \
 	x509v3/v3_sxnet.c \
 	x509v3/v3_utl.c \
-	x509v3/v3err.c
+	x509v3/v3err.c \
 
 local_c_includes := \
-	$(NDK_PROJECT_PATH) \
-	$(NDK_PROJECT_PATH)/crypto/asn1 \
-	$(NDK_PROJECT_PATH)/crypto/evp \
-	$(NDK_PROJECT_PATH)/include \
-	$(NDK_PROJECT_PATH)/include/openssl
+	$(LOCAL_PATH)/.. \
+    $(LOCAL_PATH)/../include \
+	$(LOCAL_PATH)/asn1 \
+	$(LOCAL_PATH)/evp \
+	$(LOCAL_PATH)/modes
 
 local_c_flags := -DNO_WINDOWS_BRAINDEATH
-
-#######################################
-
-# target
-include $(CLEAR_VARS)
-include $(LOCAL_PATH)/../android-config.mk
-LOCAL_SRC_FILES += $(local_src_files)
-LOCAL_CFLAGS += $(local_c_flags)
-LOCAL_C_INCLUDES += $(local_c_includes)
-LOCAL_LDLIBS += -lz
-ifeq ($(TARGET_ARCH),arm)
-	LOCAL_SRC_FILES += $(arm_src_files)
-	LOCAL_CFLAGS += $(arm_cflags)
-else
-	LOCAL_SRC_FILES += $(non_arm_src_files)
-endif
-ifeq ($(TARGET_SIMULATOR),true)
-	# Make valgrind happy.
-	LOCAL_CFLAGS += -DPURIFY
-    LOCAL_LDLIBS += -ldl
-endif
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE:= libcrypto
-include $(BUILD_SHARED_LIBRARY)
-
-#######################################
-# host shared library
-ifeq ($(WITH_HOST_DALVIK),true)
-    include $(CLEAR_VARS)
-    include $(LOCAL_PATH)/../android-config.mk
-    LOCAL_SRC_FILES += $(local_src_files)
-    LOCAL_CFLAGS += $(local_c_flags) -DPURIFY
-    LOCAL_C_INCLUDES += $(local_c_includes)
-    LOCAL_SRC_FILES += $(non_arm_src_files)
-    LOCAL_LDLIBS += -ldl
-    LOCAL_MODULE_TAGS := optional
-    LOCAL_MODULE:= libcrypto
-    include $(BUILD_SHARED_LIBRARY)
-endif
 
 ########################################
 # host static library, which is used by some SDK tools.
@@ -527,7 +511,7 @@ LOCAL_SRC_FILES += $(local_src_files)
 LOCAL_CFLAGS += $(local_c_flags) -DPURIFY
 LOCAL_C_INCLUDES += $(local_c_includes)
 LOCAL_SRC_FILES += $(non_arm_src_files)
-LOCAL_LDLIBS += -ldl
+LOCAL_STATIC_LIBRARIES += libz
 LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE:= libcrypto_static
+LOCAL_MODULE:= libcrypto
 include $(BUILD_STATIC_LIBRARY)
